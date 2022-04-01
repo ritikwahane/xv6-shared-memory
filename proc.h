@@ -1,3 +1,5 @@
+#define SHMMNI 1024
+
 // Per-CPU state
 struct cpu {
   uchar apicid;                // Local APIC ID
@@ -34,6 +36,25 @@ struct context {
 
 enum procstate { UNUSED, EMBRYO, SLEEPING, RUNNABLE, RUNNING, ZOMBIE };
 
+struct shmid_ds{
+  int shm_segsz; //Size of segment (bytes)
+  int shm_cpid;  //PID of creator
+  int shm_lpid;  //PID of last shmat()/shmdt()
+  int shm_attaches;  //No. of current attaches
+};
+
+struct glob_shm{
+  int key;
+  int shmid;
+  char * addr;
+  struct shmid_ds shmid_ds;
+}glob_shm[SHMMNI];
+
+struct proc_shm{
+  int key;
+  void *va;
+};
+
 // Per-process state
 struct proc {
   uint sz;                     // Size of process memory (bytes)
@@ -49,6 +70,8 @@ struct proc {
   struct file *ofile[NOFILE];  // Open files
   struct inode *cwd;           // Current directory
   char name[16];               // Process name (debugging)
+  int shmsz:                   // Current size of shared memory
+  struct proc_shm proc_shm[16];// Pages shared by process
 };
 
 // Process memory is laid out contiguously, low addresses first:
