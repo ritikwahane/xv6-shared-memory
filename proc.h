@@ -1,5 +1,5 @@
 #define SHMMNI 1024
-
+#define SHMMIN 1
 // Per-CPU state
 struct cpu {
   uchar apicid;                // Local APIC ID
@@ -37,18 +37,34 @@ struct context {
 enum procstate { UNUSED, EMBRYO, SLEEPING, RUNNABLE, RUNNING, ZOMBIE };
 
 struct shmid_ds{
+  struct ipc_perm shm_perm; //Ownership and permissions
   int shm_segsz; //Size of segment (bytes)
   int shm_cpid;  //PID of creator
   int shm_lpid;  //PID of last shmat()/shmdt()
-  int shm_attaches;  //No. of current attaches
+  int shm_nattch;  //No. of current attaches
+  struct shminfo shminfo;
 };
 
-struct glob_shm{
+struct ipc_perm{
+	int perm_key;
+	unsigned short mode;
+};
+
+//IPC_INFO
+struct shminfo{
+	unsigned long shmall;
+	unsigned long shmmax;
+	unsigned long shmmin;
+	unsigned long shmmni;
+	unsigned long shmseg;
+};
+
+struct shm{
   int key;
   int shmid;
-  char * addr;
+  char *addr;
   struct shmid_ds shmid_ds;
-}glob_shm[SHMMNI];
+}shm[SHMMNI];
 
 struct proc_shm{
   int key;
