@@ -181,10 +181,6 @@ UPROGS=\
 	_usertests\
 	_wc\
 	_zombie\
-	_shmget\
-	_shmat\
-	_shmdt\
-	_shmctl\
 
 fs.img: mkfs README $(UPROGS)
 	./mkfs fs.img README $(UPROGS)

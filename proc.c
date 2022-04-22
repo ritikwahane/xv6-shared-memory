@@ -22,8 +22,8 @@ static void wakeup1(void *chan);
 
 void shminit(){
   for(int i = 0; i < SHMMNI; i++){
-    shm[i].key = -1;
-    shm[i].shmid = i;
+    glob_shm[i].key = -1;
+    glob_shm[i].shmid = i;
   }
 }
 
