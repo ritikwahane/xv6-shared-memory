@@ -272,6 +272,85 @@ int shmget(int key, int size, int shmflg){
 	return shm[find_flag].shmid;
 }
 
+int shmctl(int shmid, int cmd, void *buf){
+	struct shmid_ds *shmid_ds_buffer = (struct shmid_ds *)buf;
+	// EINVAL -> shmid not a valid identifier
+	if(shmid < 0 || shmid > SHMMNI || shm[shmid].key == -1)
+		return -1;
+
+	// EINVAL -> cmd is not valid command
+	if((cmd == IPC_STAT || cmd == IPC_SET || cmd == IPC_INFO || cmd == IPC_RMID))
+		return -1;
+	int perm = shm[i].shmid_ds.shm_perm.mode;
+	if(cmd == IPC_STAT){
+		// RW also considered bacause RW has read permission
+		if(perm == 0444 || perm == 0666){
+			// copy information from kernel data stucture to shmid_ds pointed by buf
+			shmid_ds_buffer->shm_segsz = shm[shmid].shmid_ds.shm_segsz;
+			shmid_ds_buffer->shm_cpid = shm[shmid].shmid_ds.shm_cpid;
+			shmid_ds_buffer->shm_lpid = shm[shmid].shmid_ds.shm_lpid;
+			shmid_ds_buffer->shm_nattch = shm[shmid].shmid_ds.shm_nattch;
+			shmid_ds_buffer->shm_perm.perm_key = shm[shmid].shmid_ds.shm_perm.perm_key;
+			shmid_ds_buffer->shm_perm.perm_mode = shm[shmid].shmid_ds.shm_perm.mode;
+			return 0;
+		}
+	       // EACCES -> does not allow read access for shmid
+		else{
+			return -1; 
+		}
+		// EFAULT -> address pointed to by buf isn't accessible
+		//
+	}
+	if(cmd == IPC_SET){
+		// EFAULT -> address pointed to by buf isn't accessible
+		//
+
+		// creator permission
+		else if(perm == 666){
+			// 9 bits user mode
+	                // write to kernel data strcuture
+        	        //shm[shmid].shmid_ds = *buf;
+                	shm[shmid].shmid_ds.shm_perm.mode = shmid_ds_buffer->shm_perm.perm_mode;
+                	shm[shmid].shmid_ds.shm_segsz = shmid_ds_buffer->shm_segsz;
+                	shm[shmid].shmid_ds.shm_cpid = shmid_ds_buffer->shm_cpid;
+               		shm[shmid].shmid_ds.shm_lpid = shmid_ds_buffer->shm_lpid;
+                	shm[shmid].shmid_ds.shm_nattch = shmid_ds_buffer->shm_nattch;
+                	shm[shmid].shmid_ds.shm_perm.perm_key = shmid_ds_buffer->shm_perm.perm_key;
+                	shm[shmid].shmid_ds.shm_perm.mode = shmid_ds_buffer->shm_perm.perm_mode;
+			return 0;
+		}
+		// EPERM 
+		else
+			return -1;
+		
+	}
+	if(cmd == IPC_RMID){
+		if(perm == 0666){
+			// Mark segment to be destroyed
+			int page_count = (size / PGSIZE) + 1;
+			if(shm[shmid].shmid_ds,shm_nattch == 0){
+				////////
+				return 0; 
+			}
+			else{
+				// mark for deleting
+				return 0;
+			}
+		}
+		// EPERM 
+		else
+			return -1;
+	}
+	if(cmd == IPC_INFO){
+		shmid_ds_buffer->shminfo.shmall = shm[shmid].shmid_ds.shminfo.shmall;
+		shmid_ds_buffer->shminfo.shmmax = shm[shmid].shmid_ds.shminfo.shmmax;
+		shmid_ds_buffer->shminfo.shmmin = shm[shmid].shmid_ds.shminfo.shmmin;
+		shmid_ds_buffer->shminfo.shmmni = shm[shmid].shmid_ds.shminfo.shmmni;
+		shmid_ds_buffer->shminfo.shmseg = shm[shmid].shmid_ds.shminfo.shmseg;
+		return 0;
+	}
+}
+
 // Create a new process copying p as the parent.
 // Sets up stack to return as if from system call.
 // Caller must set state of returned proc to RUNNABLE.
