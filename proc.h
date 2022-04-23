@@ -1,5 +1,13 @@
-#define SHMMNI 1024
-#define SHMMIN 1
+//#define SHMALL 
+//#define SHMMAX
+//#define SHMMIN 
+//#define SHMMNI 
+//#define SHMSEG 
+
+/*
+macros for key and flags will go here
+*/
+
 // Per-CPU state
 struct cpu {
   uchar apicid;                // Local APIC ID
@@ -62,14 +70,15 @@ struct shminfo{
 struct shm{
   int key;
   int shmid;
-  char *addr;
+  char *addr[100];
   struct shmid_ds shmid_ds;
 }shm[SHMMNI];
 
-struct proc_shm{
-  int key;
+// shared page
+struct shm_shared_page{
+  int key, size;
   void *va;
-};
+}shm_shared_page;
 
 // Per-process state
 struct proc {
@@ -87,7 +96,7 @@ struct proc {
   struct inode *cwd;           // Current directory
   char name[16];               // Process name (debugging)
   int shmsz:                   // Current size of shared memory
-  struct proc_shm proc_shm[16];// Pages shared by process
+  struct shm_shared_page shm_shared_page[16];// Pages shared by process
 };
 
 // Process memory is laid out contiguously, low addresses first:

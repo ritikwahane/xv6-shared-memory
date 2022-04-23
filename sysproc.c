@@ -10,45 +10,14 @@
 int sys_shmget(void){
   int key;
   int size;
-  int flag;
+  int shmflg;
   if(argint(0, &key) < 0)
     return -1;
   if(argint(1, &size) < 0)
     return -1;
-  if(argint(2, &flag) < 0)
+  if(argint(2, &shmflg) < 0)
     return -1;
-  for(int i = 0; i < SHMMNI; i++){  
-    // EEXIST -> shared mem exists and shmflg IPC_CREAT and IPC_EXCL
-	if(shm[i].key == key && (flag == (IPC_CREAT|IPC_EXCL|0666) || flag == (IPC_CREAT|IPC_EXCL|0444)))
-      		return -1;
-    	
-	// EINVAL -> shared mem exists and size is greater than size of segment  
-	if(shm[i].key == key && shm[i].shmid_ds.shm_segsz < size) 
-      		return -1;
-
-	// key exists and segment size less than size of segment
-	if(shm[i].key == key && shm[i].shmid_ds.shm_segsz >= size)
-		return shm[i].shmid;
-
-	// ENIVAL -> shared mem is to be created but size is less than SHMMIN and greater than SHMMAX 
-	if(shm[i].key != key && (size < SHMMIN || size > SHMMAX))
-		return -1;
-	
-	// ENOENT -> no segment exists for the key and IPC_CREAT not speicfied 
-	if(shm[i].key != key && flag != IPC_CREAT)
-		return -1;
-	
-	// EACCESS 
-	if(flag == (IPC_CREAT|IPC_EXCL|0444) || flag == (IPC_CREAT|0444))
-		return -1;	
-  }
-  // ENOSPC 
-  //if(current _shared_mem_size + size > SHMALL)
-	// return -1;
-
-	// IPC_PRIVATE key create new shared mem	
-	if(shm[i].key == IPC_PRIVATE || flag == (IPC_CREAT|IPC_EXCL|0666) || flag == (IPC_CREAT|IPC_EXCL|0444) || flag == (IPC_CREAT|0666) || flag == (IPC_CREAT|0444))
-		//shmget();
+	return shmget(key, size, shmflg);
 }
 
 void *sys_shmat(void)
@@ -73,7 +42,7 @@ void *sys_shmat(void)
   if (flag == SHM_RDONLY)
     permissions = 444;
   // EACCESS -> the shared memory segment is to be attached in read-only mode and the calling thread does not read permission to the shared memory segment.
-  if (glob_shm[shmid].shmid_ds.shm_perm.mode == 444 && flag != SHM_RDONLY)
+  if (shm[shmid].shmid_ds.shm_perm.mode == 444 && flag != SHM_RDONLY)
     return -1;
   // limit for number of shared memory segments for that process reached
   if (flag1 == -1)
@@ -114,8 +83,7 @@ int sys_shmdt(void)
   return 0;
 }
 
-int sys_shmctl(void)
-{
+int sys_shmctl(void){
   int shmid, cmd;
   struct shmid_ds *buf;
   if (argint(0, &shmid) < 0)
@@ -124,15 +92,7 @@ int sys_shmctl(void)
     return -1;
   if (argptr(2, (void *)&buf, sizeof(*buf)) < 0)
     return -1;
-  // EINVAL -> an argument value is out of range.
-  if (shmid > SHMMNI)
-    return -1; 
-  // EINVAL -> the shmid parameter is not a valid shared memory identifier.
-  if(glob_shm[shmid].key == -1)  
-    return -1;
-  // EINVAL -> the cmd parameter is not a valid command.
-  if(!(cmd == IPC_STAT || cmd == IPC_SET || cmd == IPC_INFO || cmd == IPC_RMID))  
-    return -1;
+	return shmctl(shmid, cmd, (void *)buf);
 }
 
 int

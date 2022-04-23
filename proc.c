@@ -20,13 +20,6 @@ extern void trapret(void);
 
 static void wakeup1(void *chan);
 
-void shminit(){
-  for(int i = 0; i < SHMMNI; i++){
-    shm[i].key = -1;
-    shm[i].shmid = i;
-  }
-}
-
 void
 pinit(void)
 {
@@ -184,6 +177,99 @@ growproc(int n)
   curproc->sz = sz;
   switchuvm(curproc);
   return 0;
+}
+
+// initialize shared memory 
+void shminit(){
+  for(int i = 0; i < SHMMNI; i++){
+    shm[i].key = -1;
+    shm[i].shmid = i;
+    shm[i].shmid_ds.shm_segsz = 0;
+    shm[i].shmid_ds.shm_cpid = -1;
+    shm[i].shmid_ds.shm_lpid = -1;
+    shm[i].shmid_ds.shm_nattch = 0;
+    shm[i].shmid_ds.ipc_perm.key = -1;
+    shm[i].shmid_ds.ipc_perm.mode = -1;
+    shm[i].shmid_ds.shminfo.shmall = SHMALL;
+    shm[i].shmid_ds.shminfo.shmmax = SHMMAX;
+    shm[i].shmid_ds.shminfo.shmmin = SHMMIN;
+    shm[i].shmid_ds.shminfo.shmmni = SHMMNI;
+    shm[i].shmid_ds.shminfo.shmseg = SHMSEG;
+    for(int j = 0; j < 100; j++){
+        shm[i].addr[j] = (void *)0;
+    }
+  }
+}
+
+int shmget(int key, int size, int shmflg){
+	if(!((shmflg == 0) && (key != IPC_PRIVATE))){
+  		return -1;
+  	}
+
+	int count_req_pages = (size/PGSIZE) + 1;
+  	// ENOPSC
+  	if(count_req_pages > SHMALL)
+  		return -1;
+
+  	for(int i = 0; i < SHMMNI; i++){
+  		// EEXIST -> shared mem exists and shmflg IPC_CREAT and IPC_EXCL
+  		if(shm[i].key == key){
+  			if(shmflg == (IPC_CREAT | IPC_EXCL))
+  				return -1;
+			// EINVAL -> shared mem exists and size is greater than size of segment
+			if(shm[i].shmid_ds.shm_segsz < size)
+			  return -1;
+
+			// ENIVAL -> shared mem is to be created but size is less than SHMMIN and greater than SHMMAX
+			if (size < SHMMIN || size > SHMMAX)
+			  return -1;
+
+			// permission
+			int perm = shm[i].shmid_ds.shm_perm.mode;
+	  		if(perm == 0666 || perm == 0444){
+	  			if((shmflg == 0) && (key != IPC_PRIVATE))
+	  				return shm[i].shmid;
+	  			if(shmflg = IPC_CREAT)
+	  				return shm[i].shmid;
+	  		}
+			// EACCES
+	  		else
+	  			return -1;
+		}
+  	}
+  	int find_flag = 0;
+  	// search for shared mem segment to be allocated
+  	for(int i = 0; i < SHMMNI; i++){
+  		if(shm[i].key == -1){
+  			find_flag = i;
+  			break;
+  		}
+  	}
+	// ENOSPC -> all  possible shared memory IDs have been taken
+  	if(find_flag == 0)
+  		return -1;
+  	
+  	// create new segment
+  	if((key == IPC_PRIVATE) || (shmflg == IPC_CREAT) || (shmflg == (IPC_CREAT | IPC_EXCL))){
+  		for(int i = 0; i < count_req_pages; i++){
+  			char *shmpage = kalloc();
+  			if(!shmpage){
+  				cprintf("Shared memory page allocation failed\n");
+  				return -1;
+  			}
+  		} 
+  		memset(shmpage, 0, PGSIZE)
+  		shm[find_flag].key = key;
+  		shm[find_flag].shmid = find_flag;
+  		shm[find_flag].addr[i] = (void *)V2P(shmpage);
+  		shm[find_flag].shmid_ds.shm_segsz = count_req_pages;
+  		shm[find_flag].shmid_ds.shm_cpid = myproc()->pid;
+		shm[find_flag].shmid_ds.shm_lpid = 0;
+		shm[find_flag].shmid_ds.shm_nattch = 0;
+		shm[find_flag].shmid_ds.ipc_perm.mode = /*last significant 9 bits*/;
+		shm[find_flag].shmid_ds.ipc_perm.key = key;
+	}
+	return shm[find_flag].shmid;
 }
 
 // Create a new process copying p as the parent.
