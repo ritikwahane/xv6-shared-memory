@@ -24,32 +24,14 @@ void *sys_shmat(void)
 {
   int shmid;
   char *shmaddr;
-  int flag;
+  int shmflg;
   if (argint(0, &shmid) < 0)
     return -1;
   if (argptr(1, &shmaddr, sizeof(*shmaddr)) < 0)
     return -1;
-  if (argint(2, &flag) < 0)
+  if (argint(2, &shmflg) < 0)
     return -1;
-  // EINVAL -> an argument value is not valid, out of range, or NULL.
-  if (shmid > SHMMNI || shmid < 0)
-    return -1;
-  // EINVAL -> the shmid parameter is not a valid shared memory identifier.
-  if (shm[shmid].key == -1)
-    return -1;
-  int permissions = shm[shmid].shmid_ds.shm_perm.mode;
-  // The process must have read permission for the segment. If this flag is not specified, the segment is attached for read and write access, and the process must have read and write permission for the segment.
-  if (flag == SHM_RDONLY)
-    permissions = 444;
-  // EACCESS -> the shared memory segment is to be attached in read-only mode and the calling thread does not read permission to the shared memory segment.
-  if (shm[shmid].shmid_ds.shm_perm.mode == 444 && flag != SHM_RDONLY)
-    return -1;
-  // limit for number of shared memory segments for that process reached
-  if (flag1 == -1)
-    return -1;
-  // ENOMEM -> function needed to allocate storage, but no storage is available.
-  if (!check) // ENOMEM
-    return -1;
+	return shmat(shmid, (void *)shmaddr, shmflg);
 }
 
 int sys_shmdt(void)

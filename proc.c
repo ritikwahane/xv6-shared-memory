@@ -272,6 +272,43 @@ int shmget(int key, int size, int shmflg){
 	return shm[find_flag].shmid;
 }
 
+void *shmat(int shmid, void *shmaddr, int shmflg){
+	// EINVAL -> an argument value is not valid, out of range, or NULL.
+	if (shmid > SHMMNI || shmid < 0)
+    		return (void *)-1;
+	// EINVAL -> the shmid parameter is not a valid shared memory identifier.
+  	if (shm[shmid].key == -1)
+    		return (void *)-1;
+	// EINVAL
+	if(shmflg == SHM_REMAP && shmaddr == NULL)
+		return (void *)-1;
+  	int perm = shm[shmid].shmid_ds.shm_perm.mode;
+  	// The process must have read permission for the segment. If this flag is not specified, the segment is attached for read and write access, and the process must have read and write permission for the segment.
+  	if (shmflg == SHM_RDONLY)
+    		perm = 444;
+	else
+		perm = 666;
+  	// EACCES -> the shared memory segment is to be attached in read-only mode and the calling thread does not read permission to the shared memory segment.
+  	if (shm[shmid].shmid_ds.shm_perm.mode != 444 && shmflg != SHM_RDONLY)
+    		return (void *)-1;
+	if(shmaddr == NULL){
+		// choose page-aligned address to attch segment
+	}
+	else if(shmaddr != NULL && shmflg == SHM_RND){
+		// attch at address equal to shmaddr rounded down to the nearest multiple of SHMLBA
+	}
+	else{
+		// page-aligned address at which attch occurs
+	}
+
+	// ENOMEM -> function needed to allocate storage, but no storage is available.
+        /*memory allocation code hre*/
+        if (!check) // ENOMEM
+                return -1;
+
+
+}
+
 int shmctl(int shmid, int cmd, void *buf){
 	struct shmid_ds *shmid_ds_buffer = (struct shmid_ds *)buf;
 	// EINVAL -> shmid not a valid identifier
