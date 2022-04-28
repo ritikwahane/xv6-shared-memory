@@ -36,33 +36,10 @@ void *sys_shmat(void)
 
 int sys_shmdt(void)
 {
-  char *shmaddr;
-  if (argptr(0, &shmaddr, sizeof(*shmaddr)) < 0)
-    return -1;
-  struct proc *curproc = myproc();
-  int flag1 = -1;
-  for (int i = 0; i < 16; i++)
-  {
-    if (curproc->proc_shm[i].va != shmaddr)
-      continue;
-    if (curproc->proc_shm[i].va == shmaddr)
-    {
-      flag1 = i;
-      break;
-    }
-  }
-  // EINVAL -> limit for number of shared memory segments for that process reached
-  if (flag1 == -1)
-    return -1;
-  int shmid = curproc->proc_shm[flag1].shmid;
-  // EINVAL -> The value of shmaddr is not the start address of a shared memory segment.
-  if (shm[shmid].key == -1)
-    return -1;
-  if (shm[shmid].shmid_ds.shm_perm.rem == 1 && shm[shmid].shmid_ds.shm_nattch == 0)
-  {
-    // if nattch becomes zero and segment is marked for deletion, it is deleted
-  }
-  return 0;
+  int i;
+  if(argint(0, &i) < 0)
+    return 0;
+  return shmdt((void *)i);
 }
 
 int sys_shmctl(void){

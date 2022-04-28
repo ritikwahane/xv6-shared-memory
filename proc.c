@@ -201,6 +201,7 @@ void shminit(){
   }
 }
 
+// Creates a shared memory region with given key, and size depending upon flag provided
 int shmget(int key, int size, int shmflg){
 	if(!((shmflg == 0) && (key != IPC_PRIVATE))){
   		return -1;
@@ -264,21 +265,31 @@ int shmget(int key, int size, int shmflg){
   		shm[find_flag].addr[i] = (void *)V2P(shmpage);
   		shm[find_flag].shmid_ds.shm_segsz = count_req_pages;
   		shm[find_flag].shmid_ds.shm_cpid = myproc()->pid;
-		shm[find_flag].shmid_ds.shm_lpid = 0;
-		shm[find_flag].shmid_ds.shm_nattch = 0;
-		shm[find_flag].shmid_ds.ipc_perm.mode = /*last significant 9 bits*/;
-		shm[find_flag].shmid_ds.ipc_perm.key = key;
+		  shm[find_flag].shmid_ds.shm_lpid = 0;
+		  shm[find_flag].shmid_ds.shm_nattch = 0;
+		  shm[find_flag].shmid_ds.ipc_perm.mode = /*last significant 9 bits*/;
+		  shm[find_flag].shmid_ds.ipc_perm.key = key;
 	}
 	return shm[find_flag].shmid;
 }
 
+// attaches shared memory segment identified by shmid to the virtual address shmaddr if provided; otherwise attach at the first fitting address
 void *shmat(int shmid, void *shmaddr, int shmflg){
 	// EINVAL -> an argument value is not valid, out of range, or NULL.
 	if (shmid > SHMMNI || shmid < 0)
-    		return (void *)-1;
+    return (void *)-1;
+  int index = -1, idx, perm_flag;
+  uint size = 0, seg;
+  void *va = (void*)HEAPLIMIT, *min_va;
+  struct proc *process = myproc();
+  index = shm[shmid].shmid;
+  // shmid not found
+  if(index == -1){
+    return (void*)-1;
+  }
 	// EINVAL -> the shmid parameter is not a valid shared memory identifier.
-  	if (shm[shmid].key == -1)
-    		return (void *)-1;
+  if (shm[shmid].key == -1)
+    return (void *)-1;
 	// EINVAL
 	if(shmflg == SHM_REMAP && shmaddr == NULL)
 		return (void *)-1;
@@ -302,11 +313,98 @@ void *shmat(int shmid, void *shmaddr, int shmflg){
 	}
 
 	// ENOMEM -> function needed to allocate storage, but no storage is available.
-        /*memory allocation code hre*/
-        if (!check) // ENOMEM
-                return -1;
+  // memory allocation code hre
+  // if (!check)
+  //   return -1;
 
+  idx = -1;
+  for(int i = 0, i < SHMALL, i++){
+    if(process->pages[i].key != -1){
+      idx = i;
+      break;
+    }
+  }
+  if(index != -1){
+    process->pages[idx].shmid = shmid;
+    process->pages[idx].virtual_addr = va;
+    process->pages[idx].key = shm[index].key;
+    process->pages[idx].size = shm[index].size;
+    process->pages[idx].perm = perm_flag; 
+    shm[index].shmid_ds_buffer.shm_nattch =+ 1;
+    shm[index].shmid_ds_buffer.shm_lpid = process->pid;
+  }else{
+    return -1;
+  }
+  return va;
+}
 
+int shmdt(void *shmaddr){
+  char *shmaddr;
+  if (argptr(0, &shmaddr, sizeof(*shmaddr)) < 0)
+    return -1;
+  struct proc *process = myproc();
+  void *va = (void *)0;
+  int shmid, index, i, flag1 = -1;
+  uint size;
+  int flag1 = -1;
+  for(i = 0; i < SHMALL; i++){
+    if (process->proc_shm[i].va != shmaddr)
+      continue;
+    if (process->proc_shm[i].va == shmaddr){
+      flag1 = i;
+      break;
+    }
+  }
+  // EINVAL -> limit for number of shared memory segments for that process reached
+  if (flag1 == -1)
+    return -1;
+  int shmid = process->proc_shm[flag1].shmid;
+  // EINVAL -> The value of shmaddr is not the start address of a shared memory segment.
+  if (shm[shmid].key == -1)
+    return -1;
+  if (shm[shmid].shmid_ds.shm_perm.rem == 1 && shm[shmid].shmid_ds.shm_nattch == 0)
+  {
+    // if nattch becomes zero and segment is marked for deletion, it is deleted
+  }
+  // find the index from pages array which is attached at the provided shmaddr.
+  for(i = 0; i < SHMALL; i++){
+    if(process->pages[i].key != -1 && process->pages[i].virtual_addr == shmaddr){
+      va = process->pages[i].virtual_addr;
+      index = i;
+      shmid = process->pages[i].shmid;
+      size = process->pages[index].size;
+      break;
+    }
+  }
+  if(va){
+    process->pages[index].shmid = -1;
+    process->pages[index].key = -1;
+    process->pages[index].size = 0;
+    process->pages[index].virtual_addr = (void *)0;
+    // decrement attaches
+    if(shm[shmid].shmid_ds_buffer.shm_nattch > 0){
+      shm[shmid].shmid_ds_buffer.shm_nattch -= 1;
+    }
+    // remove the segments
+    if(shm[shmid].shmid_ds_buffer.shm_nattch == 0){
+      for(i = 0; i < shm[index].size; i++){
+        char *addr = (char *)P2V(shm[index].physical+addr[i]);
+        kfree(addr);
+        shm[index].physical_addr[i] = (void *)0;
+      }
+      shm[shmid].size = 0;
+      shm[shmid].key = shm[shmid].shmid = -1;
+      shm[shmid].shmid_ds.shm_nattch = 0;
+      shm[shmid].shmid_ds.shm_segsz = -1;
+      shm[shmid].shmid_ds.shm_perm.key = -1;
+      shm[shmid].shmid_ds.shm_perm.mode = -1;
+      shm[shmid].shmid_ds.shm_perm.rem = 0;
+      shm[shmid].shmid_ds.shm_cpid = -1;
+      shm[shmid].shmid_ds.shm_lpid = -1;
+    }
+    shm[shmid].shmid_ds_buffer.shm_lpid = process->pid;
+  }
+  return 0;
 }
 
 int shmctl(int shmid, int cmd, void *buf){
