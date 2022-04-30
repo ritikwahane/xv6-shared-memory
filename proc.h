@@ -70,6 +70,7 @@ struct shminfo{
 struct shm{
   int key;
   int shmid;
+  int mark_delete;
   char *addr[100];
   struct shmid_ds shmid_ds;
 }shm[SHMMNI];

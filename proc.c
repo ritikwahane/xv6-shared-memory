@@ -184,6 +184,7 @@ void shminit(){
   for(int i = 0; i < SHMMNI; i++){
     shm[i].key = -1;
     shm[i].shmid = i;
+    shm[i].mark_delete = 0;
     shm[i].shmid_ds.shm_segsz = 0;
     shm[i].shmid_ds.shm_cpid = -1;
     shm[i].shmid_ds.shm_lpid = -1;
@@ -267,7 +268,7 @@ int shmget(int key, int size, int shmflg){
   		shm[find_flag].shmid_ds.shm_cpid = myproc()->pid;
 		  shm[find_flag].shmid_ds.shm_lpid = 0;
 		  shm[find_flag].shmid_ds.shm_nattch = 0;
-		  shm[find_flag].shmid_ds.ipc_perm.mode = /*last significant 9 bits*/;
+		  /*shm[find_flag].shmid_ds.ipc_perm.mode = last significant 9 bits*/;
 		  shm[find_flag].shmid_ds.ipc_perm.key = key;
 	}
 	return shm[find_flag].shmid;
@@ -418,33 +419,37 @@ int shmctl(int shmid, int cmd, void *buf){
 		return -1;
 	int perm = shm[i].shmid_ds.shm_perm.mode;
 	if(cmd == IPC_STAT){
-		// RW also considered bacause RW has read permission
-		if(perm == 0444 || perm == 0666){
-			// copy information from kernel data stucture to shmid_ds pointed by buf
-			shmid_ds_buffer->shm_segsz = shm[shmid].shmid_ds.shm_segsz;
-			shmid_ds_buffer->shm_cpid = shm[shmid].shmid_ds.shm_cpid;
-			shmid_ds_buffer->shm_lpid = shm[shmid].shmid_ds.shm_lpid;
-			shmid_ds_buffer->shm_nattch = shm[shmid].shmid_ds.shm_nattch;
-			shmid_ds_buffer->shm_perm.perm_key = shm[shmid].shmid_ds.shm_perm.perm_key;
-			shmid_ds_buffer->shm_perm.perm_mode = shm[shmid].shmid_ds.shm_perm.mode;
-			return 0;
-		}
-	       // EACCES -> does not allow read access for shmid
-		else{
-			return -1; 
+		if(shmid_ds_buffer){
+			// RW also considered bacause RW has read permission
+			if(perm == 0444 || perm == 0666){
+				// copy information from kernel data stucture to shmid_ds pointed by buf
+				shmid_ds_buffer->shm_segsz = shm[shmid].shmid_ds.shm_segsz;
+				shmid_ds_buffer->shm_cpid = shm[shmid].shmid_ds.shm_cpid;
+				shmid_ds_buffer->shm_lpid = shm[shmid].shmid_ds.shm_lpid;
+				shmid_ds_buffer->shm_nattch = shm[shmid].shmid_ds.shm_nattch;
+				shmid_ds_buffer->shm_perm.perm_key = shm[shmid].shmid_ds.shm_perm.perm_key;
+				shmid_ds_buffer->shm_perm.perm_mode = shm[shmid].shmid_ds.shm_perm.mode;
+				return 0;
+			}
+	       		// EACCES -> does not allow read access for shmid
+			else{
+				return -1; 
+			}
 		}
 		// EFAULT -> address pointed to by buf isn't accessible
-		//
+		else
+			return -1;
 	}
 	if(cmd == IPC_SET){
 		// EFAULT -> address pointed to by buf isn't accessible
-		//
+		if(!shmid_ds_buffer)
+			return -1;
 
-		// creator permission
+		// permission
 		else if(perm == 666){
 			// 9 bits user mode
 	                // write to kernel data strcuture
-        	        //shm[shmid].shmid_ds = *buf;
+        	        // shm[shmid].shmid_ds = *buf;
                 	shm[shmid].shmid_ds.shm_perm.mode = shmid_ds_buffer->shm_perm.perm_mode;
                 	shm[shmid].shmid_ds.shm_segsz = shmid_ds_buffer->shm_segsz;
                 	shm[shmid].shmid_ds.shm_cpid = shmid_ds_buffer->shm_cpid;
@@ -461,14 +466,31 @@ int shmctl(int shmid, int cmd, void *buf){
 	}
 	if(cmd == IPC_RMID){
 		if(perm == 0666){
-			// Mark segment to be destroyed
+			// destroy if no process is attched to it
 			int page_count = (size / PGSIZE) + 1;
 			if(shm[shmid].shmid_ds,shm_nattch == 0){
-				////////
+				for(int i = 0; i < 100; i++){
+					if(shm[shmid].addr[i]){
+						char *addr = (char *)P2V(shm[shmid].addr[i]);
+						kfree(addr);
+					}
+				}
+				for(int i = 0; i < 100; i++){
+					shm[shmid].addr[j] = (void *)0;
+					shm[shmid].key = -1;
+					shm[shmid].mark_delete = 0;
+					shm[shmid].shmid_ds.ipc_perm.key = -1;
+					shm[shmid].shmid_ds.ipc_perm.mode = -1;
+					shm[shmid].shmid_ds.shm_segsz = 0;
+      					shm[shmid].shmid_ds.shm_cpid = -1;
+      					shm[shmid].shmid_ds.shm_lpid = -1;
+      					shm[shmid].shmid_ds.shm_nattch = 0;
+				}
 				return 0; 
 			}
 			else{
 				// mark for deleting
+				shm[shmid].mark_delete = 1;
 				return 0;
 			}
 		}
