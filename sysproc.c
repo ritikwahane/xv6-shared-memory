@@ -36,10 +36,10 @@ void *sys_shmat(void)
 
 int sys_shmdt(void)
 {
-  char *shmaddr;
-  if (argptr(0, &shmaddr, sizeof(*shmaddr)) < 0)
-    return -1;
-  return shmdt((void *)shmaddr);
+  int i;
+  if(argint(0, &i) < 0)
+    return 0;
+  return shmdt((void *)i);
 }
 
 int sys_shmctl(void){

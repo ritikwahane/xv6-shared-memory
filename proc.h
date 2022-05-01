@@ -1,7 +1,7 @@
 //#define SHMALL 
 //#define SHMMAX
-#define SHMMIN 1
-#define SHMMNI 1024
+//#define SHMMIN 
+//#define SHMMNI 
 //#define SHMSEG 
 
 /*
@@ -97,7 +97,7 @@ struct proc {
   struct inode *cwd;           // Current directory
   char name[16];               // Process name (debugging)
   int shmsz:                   // Current size of shared memory
-  struct shm_shared_page shm_page[16];// Pages shared by process
+  struct shm_shared_page shm_shared_page[16];// Pages shared by process
 };
 
 // Process memory is laid out contiguously, low addresses first:

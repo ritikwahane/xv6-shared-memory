@@ -7,8 +7,6 @@
 // Key addresses for address space layout (see kmap in vm.c for layout)
 #define KERNBASE 0x80000000         // First kernel virtual address
 #define KERNLINK (KERNBASE+EXTMEM)  // Address where kernel is linked
-// KERBASE - 16 MB = 0x80000000 - 0x1000000 = 0x7F000000(HEAPLIMIT)
-#define HEAPLIMIT 0x7F000000 // 16MB from this limit -> KERNBASE
 
 #define V2P(a) (((uint) (a)) - KERNBASE)
 #define P2V(a) ((void *)(((char *) (a)) + KERNBASE))
