@@ -13,6 +13,143 @@ char name[3];
 char *echoargv[] = { "echo", "ALL", "TESTS", "PASSED", 0 };
 int stdout = 1;
 
+// Test for various conditions of shmget 
+void shmgettest(){
+    // To check the negative key value.
+    int shmid = shmget(10, 1024, IPC_CREAT | IPC_EXCL | 0666);
+    if(shmid < 0){
+        printf(1, "Error(negative key) in shmget \n");
+    }else{
+        printf(1, "Creates memory segment of size 1024 with flags IPC_CREAT| IPC_EXCL | 0666.")
+    }
+    // Allocating more than allowed size.
+    int shmid = shmget(12, 20000000, IPC_CREAT | 0444);
+    if(shmid < 0){
+        printf(1, "EINVAL(size is greater than size of segment) in shmget\n");
+    }
+    else{
+        printf(1, "Create memory segment of size 20000000(more than the limit) and flags IPC_CREAT | 0444.\n");
+    }
+    // Invalid permission check.
+    int shmid = shmget(11, 1024, IPC_CREAT);
+    if(shmid < 0){
+        printf(1, "Invalid permission check in shmget\n");
+    }
+    else{
+        printf(1, "Create memory segment of size 1024 and flags IPC_CREAT.\n");
+    }
+    // To check previously existing key
+    int shmid = shmget(10, 4096, IPC_CREAT | IPC_EXCL | 0666);
+    if(shmid < 0){
+        printf(1, "EEXIST(existing key) error in shmget\n");
+    }
+    else{
+        printf(1, "Create memory segment of size 4096 and flags IPC_CREAT | IPC_EXCL | 0666 with previously existing key, returned shared memory segment identifier.\n");
+    }
+}
+
+// Test for various conditions of shmat
+void shmattest(){
+    int shmid2 = shmget(13, 4096, IPC_CREAT | 0444);
+    void * shm = shmat(shmid2, (void *)0, 0);
+    if((int)shm < 0)
+        printf(1, "Error in shmat\n");
+    else
+        printf(1, "Segment attached to address space.\n");
+    void * shm2 = shmat(shmid2, (void *)0, SHM_RDONLY);
+    if((int)shm2 < 0)
+        printf(1, "Error in shmat\n");
+    else
+        printf(1, "Segment attached to address space using SHM_RDONLY.\n");
+    void * shm3 = shmat(2000, (void *)0, 0);
+    if((int)shm3 < 0)
+        printf(1, "EINVAL error in shmat\n");
+    else
+        printf(1, "Segment attached to address space.\n");
+    void * shm4 = shmat(1000, (void *)0, 0);
+    if((int)shm4 < 0)
+        printf(1, "EINVAL error in shmat\n");
+    else
+        printf(1, "Segment attached to address.\n");
+}
+
+// Test for various conditions of shmdt
+void shmdttest(){
+    int shmid4 = shmget(13, 4096, IPC_CREAT | 0444);
+    void * shm = shmat(shmid4, (void *)0, 0);
+    int shmdet1 = shmdt(shm);
+    
+    if(shmdet1 == -1)
+        printf(1, "Error in shmdt\n");
+    if(shmdet1 == 0)
+        printf(1, "Shmdt successful\n");
+
+    int shmdet2 = shmdt((void *)-1);
+    if(shmdet2 == -1)
+        printf(1, "EINVAL error in shmdt\n");
+    if(shmdet2 == 0)
+        printf(1, "Shmdt successful with invalid shmaddr\n");
+}
+
+// Test for various conditions of shmctl.
+void shmctltest(){
+    struct shmid_ds shmid_ds, *buffer1;
+    buffer1 = &shmid_ds;
+
+    int shmid3 = shmget(13, 4096, IPC_CREAT | 0444);
+
+    int ctl = shmctl(shmid3, IPC_STAT, buffer1);
+    if(ctl < 0){
+        printf(1, "Error in shmctl with IPC_STAT\n");
+    }else{
+        printf(1, "Values retrieved using IPC_STAT: \n");
+        printf(1, " Key = %d\n", buffer1->shm_perm.perm_key);
+        printf(1, " Segment size = %d\n", buffer1->shm_segsz);
+        printf(1, " PID of creator = %d\n", buffer1->shm_cpid);
+        printf(1, " PID of last shmat()/shmdt() = %d\n", buffer1->shm_lpid);
+        printf(1, " Number of current attaches = %d\n", buffer1->shm_nattch);
+        printf(1, " Key = %d\n", buffer1->shm_perm.perm_key);
+        printf(1, " Permissions = 0%d\n", buffer1->shm_perm.mode);
+    }
+
+    buffer1->shm_perm.mode = 0666;
+    int ctl = shmctl(shmid3, IPC_STAT, buffer1);
+    if(ctl < 0)
+      printf(1, "Error in shmctl with IPC_STAT\n");
+    else
+      printf(1, "Updated permissions = 0%d\n", buffer1->shm_perm.mode);
+    }  
+
+    int ctl = shmctl(shmid3, IPC_SET, buffer1);
+    if(ctl < 0)
+      printf(1, "Error in shmctl with IPC_SET\n");
+    else{
+      printf(1, "IPC_SET successful\n");
+
+    struct shmid_ds shmid_ds2, *buffer2;
+    buffer2 = &shmid_ds;
+    int ctl = shmctl(shmid3, IPC_INFO, buffer2);
+    if(ctl < 0)
+      printf(1, "Error in shmctl with IPC_INFO\n");
+    else{
+      printf(1, "IPC_INFO values:\n");
+      printf(1, " SHMALL %d\n", buffer2->shminfo.shmall);
+      printf(1, " SHMMAX %d\n", buffer2->shminfo.shmmax);
+      printf(1, " SHMMIN %d\n", buffer2->shminfo.shmmin);
+      printf(1, " SHMMNI %d\n", buffer2->shminfo.shmmni);
+      printf(1, " SHMSEG %d\n", buffer2->shminfo.shmseg);
+    }
+
+    int ctl = shmctl(shmid3, IPC_RMID, buffer2);
+    if(ctl < 0)
+      printf(1, "Error in shmctl with IPC_RMID\n");
+    elsetotal_shared_memory = 0;
+    no_of_shared_memory_segments = 0;
+    shminit();
+
+    printf(1, "IPC_RMID successful(marked for deletion)\n");
+}
+
 // does chdir() call iput(p->cwd) in a transaction?
 void
 iputtest(void)
@@ -1798,6 +1935,11 @@ main(int argc, char *argv[])
   uio();
 
   exectest();
+
+  shmgettest();
+	shmattest();
+	shmdttest();
+	shmctltest();
 
   exit();
 }

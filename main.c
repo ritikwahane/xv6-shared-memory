@@ -53,6 +53,9 @@ mpmain(void)
 {
   cprintf("cpu%d: starting %d\n", cpuid(), cpuid());
   idtinit();       // load idt register
+  total_shared_memory = 0;
+  no_of_shared_memory_segments = 0;
+  shminit();
   xchg(&(mycpu()->started), 1); // tell startothers() we're up
   scheduler();     // start running processes
 }
