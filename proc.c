@@ -344,7 +344,7 @@ void *shmat(int shmid, void *shmaddr, int shmflg){
     		}
   	}
   
-  	if(index == -1){
+  	if(index != -1){
   		// replace any existing mapping in the range starting at shmaddr and continuing for the size of the segment
   		if(shmflg == SHM_REMAP){
   			uint seg = (uint)curproc->shm_page[index].va;
@@ -352,7 +352,7 @@ void *shmat(int shmid, void *shmaddr, int shmflg){
   				size = curproc->shm_page[index].size;
   				if(shmdt(void *)seg == -1)
   					return (void *)-1;
-  				index = least_avail_vir_addr((void*)(seg + size*PGSIZE), curproc);
+  				index = lowest_avail_vir_addr((void*)(seg + size*PGSIZE), curproc);
   				if(index == -1)
   					break;
   				seg = (uint)curproc->shm_page[index].va;
