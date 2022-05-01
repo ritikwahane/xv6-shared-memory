@@ -6,6 +6,7 @@
 #include "x86.h"
 #include "proc.h"
 #include "spinlock.h"
+#include "stdio.h"
 
 struct {
   struct spinlock lock;
@@ -113,8 +114,8 @@ found:
   p->context->eip = (uint)forkret;
 
   for(int i = 0; i < 16; i++) {
-    p->proc_shm[i].key = -1;
-    p->proc_shm[i].va = 0;
+    p->shm_page[i].key = -1;
+    p->shm_page[i].va = 0;
   }
   
   return p;
@@ -189,8 +190,8 @@ void shminit(){
     shm[i].shmid_ds.shm_cpid = -1;
     shm[i].shmid_ds.shm_lpid = -1;
     shm[i].shmid_ds.shm_nattch = 0;
-    shm[i].shmid_ds.ipc_perm.key = -1;
-    shm[i].shmid_ds.ipc_perm.mode = -1;
+    shm[i].shmid_ds.shm_perm.perm_key = -1;
+    shm[i].shmid_ds.shm_perm.mode = -1;
     shm[i].shmid_ds.shminfo.shmall = SHMALL;
     shm[i].shmid_ds.shminfo.shmmax = SHMMAX;
     shm[i].shmid_ds.shminfo.shmmin = SHMMIN;
@@ -254,22 +255,22 @@ int shmget(int key, int size, int shmflg){
   	// create new segment
   	if((key == IPC_PRIVATE) || (shmflg == IPC_CREAT) || (shmflg == (IPC_CREAT | IPC_EXCL))){
   		for(int i = 0; i < count_req_pages; i++){
-  			char *shmpage = kalloc();
-  			if(!shmpage){
+  			char *shm_page = kalloc();
+  			if(!shm_page){
   				cprintf("Shared memory page allocation failed\n");
   				return -1;
   			}
+        memset(shm_page, 0, PGSIZE);
+        shm[find_flag].addr[i] = (void *)V2P(shm_page);
   		} 
-  		memset(shmpage, 0, PGSIZE)
   		shm[find_flag].key = key;
   		shm[find_flag].shmid = find_flag;
-  		shm[find_flag].addr[i] = (void *)V2P(shmpage);
   		shm[find_flag].shmid_ds.shm_segsz = count_req_pages;
   		shm[find_flag].shmid_ds.shm_cpid = myproc()->pid;
 		  shm[find_flag].shmid_ds.shm_lpid = 0;
 		  shm[find_flag].shmid_ds.shm_nattch = 0;
 		  /*shm[find_flag].shmid_ds.ipc_perm.mode = last significant 9 bits*/;
-		  shm[find_flag].shmid_ds.ipc_perm.key = key;
+		  shm[find_flag].shmid_ds.shm_perm.perm_key = key;
 	}
 	return shm[find_flag].shmid;
 }
@@ -313,26 +314,21 @@ void *shmat(int shmid, void *shmaddr, int shmflg){
 		// page-aligned address at which attch occurs
 	}
 
-	// ENOMEM -> function needed to allocate storage, but no storage is available.
-  // memory allocation code hre
-  // if (!check)
-  //   return -1;
-
   idx = -1;
   for(int i = 0, i < SHMALL, i++){
-    if(process->pages[i].key != -1){
+    if(process->shm_page[i].key != -1){
       idx = i;
       break;
     }
   }
   if(index != -1){
-    process->pages[idx].shmid = shmid;
-    process->pages[idx].virtual_addr = va;
-    process->pages[idx].key = shm[index].key;
-    process->pages[idx].size = shm[index].size;
-    process->pages[idx].perm = perm_flag; 
-    shm[index].shmid_ds_buffer.shm_nattch =+ 1;
-    shm[index].shmid_ds_buffer.shm_lpid = process->pid;
+    process->shm_page[idx].shmid = shmid;
+    process->shm_page[idx].virtual_addr = va;
+    process->shm_page[idx].key = shm[index].key;
+    process->shm_page[idx].size = shm[index].size;
+    process->shm_page[idx].perm = perm_flag; 
+    shm[index].shmid_ds.shm_nattch =+ 1;
+    shm[index].shmid_ds.shm_lpid = process->pid;
   }else{
     return -1;
   }
@@ -348,10 +344,10 @@ int shmdt(void *shmaddr){
   int shmid, index, i, flag1 = -1;
   uint size;
   int flag1 = -1;
-  for(i = 0; i < SHMALL; i++){
-    if (process->proc_shm[i].va != shmaddr)
+  for(i = 0; i < SHMMNI; i++){
+    if (process->shm[i].va != shmaddr)
       continue;
-    if (process->proc_shm[i].va == shmaddr){
+    if (process->shm[i].va == shmaddr){
       flag1 = i;
       break;
     }
@@ -359,57 +355,58 @@ int shmdt(void *shmaddr){
   // EINVAL -> limit for number of shared memory segments for that process reached
   if (flag1 == -1)
     return -1;
-  int shmid = process->proc_shm[flag1].shmid;
+  int shmid = process->shm_page[flag1].shmid;
   // EINVAL -> The value of shmaddr is not the start address of a shared memory segment.
   if (shm[shmid].key == -1)
     return -1;
-  if (shm[shmid].shmid_ds.shm_perm.rem == 1 && shm[shmid].shmid_ds.shm_nattch == 0)
+  if (shm[shmid].shmid_ds.shm_perm. == 1 && shm[shmid].shmid_ds.shm_nattch == 0)
   {
     // if nattch becomes zero and segment is marked for deletion, it is deleted
   }
-  // find the index from pages array which is attached at the provided shmaddr.
-  for(i = 0; i < SHMALL; i++){
-    if(process->pages[i].key != -1 && process->pages[i].virtual_addr == shmaddr){
-      va = process->pages[i].virtual_addr;
+  // find the index from shm_page array which is attached at the provided shmaddr.
+  for(i = 0; i < SHMMNI; i++){
+    if(process->shm_page[i].key != -1 && process->shm_page[i].virtual_addr == shmaddr){
+      va = process->page[i].virtual_addr;
       index = i;
-      shmid = process->pages[i].shmid;
-      size = process->pages[index].size;
+      shmid = process->shm_page[i].shmid;
+      size = process->shm_page[index].size;
       break;
     }
   }
   if(va){
-    process->pages[index].shmid = -1;
-    process->pages[index].key = -1;
-    process->pages[index].size = 0;
-    process->pages[index].virtual_addr = (void *)0;
+    process->shm_page[index].shmid = -1;
+    process->shm_page[index].key = -1;
+    process->shm_page[index].size = 0;
+    process->shm_page[index].virtual_addr = (void *)0;
     // decrement attaches
-    if(shm[shmid].shmid_ds_buffer.shm_nattch > 0){
-      shm[shmid].shmid_ds_buffer.shm_nattch -= 1;
+    if(shm[shmid].shmid_ds.shm_nattch > 0){
+      shm[shmid].shmid_ds.shm_nattch -= 1;
     }
     // remove the segments
-    if(shm[shmid].shmid_ds_buffer.shm_nattch == 0){
+    if(shm[shmid].shmid_ds.shm_nattch == 0){
       for(i = 0; i < shm[index].size; i++){
         char *addr = (char *)P2V(shm[index].physical+addr[i]);
         kfree(addr);
-        shm[index].physical_addr[i] = (void *)0;
+        shm[index].addr[i] = (void *)0;
       }
       shm[shmid].size = 0;
       shm[shmid].key = shm[shmid].shmid = -1;
       shm[shmid].shmid_ds.shm_nattch = 0;
       shm[shmid].shmid_ds.shm_segsz = -1;
-      shm[shmid].shmid_ds.shm_perm.key = -1;
+      shm[shmid].shmid_ds.shm_perm.perm_key = -1;
       shm[shmid].shmid_ds.shm_perm.mode = -1;
-      shm[shmid].shmid_ds.shm_perm.rem = 0;
+      shm[shmid].mark_delete = 0;
       shm[shmid].shmid_ds.shm_cpid = -1;
       shm[shmid].shmid_ds.shm_lpid = -1;
     }
-    shm[shmid].shmid_ds_buffer.shm_lpid = process->pid;
+    shm[shmid].shmid_ds.shm_lpid = process->pid;
   }
   return 0;
 }
 
 int shmctl(int shmid, int cmd, void *buf){
-	struct shmid_ds *shmid_ds_buffer = (struct shmid_ds *)buf;
+  int i;
+	struct shmid_ds *shm_ds = (struct shmid_ds *)buf;
 	// EINVAL -> shmid not a valid identifier
 	if(shmid < 0 || shmid > SHMMNI || shm[shmid].key == -1)
 		return -1;
@@ -419,16 +416,16 @@ int shmctl(int shmid, int cmd, void *buf){
 		return -1;
 	int perm = shm[i].shmid_ds.shm_perm.mode;
 	if(cmd == IPC_STAT){
-		if(shmid_ds_buffer){
+		if(shm_ds){
 			// RW also considered bacause RW has read permission
 			if(perm == 0444 || perm == 0666){
 				// copy information from kernel data stucture to shmid_ds pointed by buf
-				shmid_ds_buffer->shm_segsz = shm[shmid].shmid_ds.shm_segsz;
-				shmid_ds_buffer->shm_cpid = shm[shmid].shmid_ds.shm_cpid;
-				shmid_ds_buffer->shm_lpid = shm[shmid].shmid_ds.shm_lpid;
-				shmid_ds_buffer->shm_nattch = shm[shmid].shmid_ds.shm_nattch;
-				shmid_ds_buffer->shm_perm.perm_key = shm[shmid].shmid_ds.shm_perm.perm_key;
-				shmid_ds_buffer->shm_perm.perm_mode = shm[shmid].shmid_ds.shm_perm.mode;
+				shm_ds->shm_segsz = shm[shmid].shmid_ds.shm_segsz;
+				shm_ds->shm_cpid = shm[shmid].shmid_ds.shm_cpid;
+				shm_ds->shm_lpid = shm[shmid].shmid_ds.shm_lpid;
+				shm_ds->shm_nattch = shm[shmid].shmid_ds.shm_nattch;
+				shm_ds->shm_perm.perm_key = shm[shmid].shmid_ds.shm_perm.perm_key;
+				shm_ds->shm_perm.mode = shm[shmid].shmid_ds.shm_perm.mode;
 				return 0;
 			}
 	       		// EACCES -> does not allow read access for shmid
@@ -442,7 +439,7 @@ int shmctl(int shmid, int cmd, void *buf){
 	}
 	if(cmd == IPC_SET){
 		// EFAULT -> address pointed to by buf isn't accessible
-		if(!shmid_ds_buffer)
+		if(!shm_ds)
 			return -1;
 
 		// permission
@@ -450,13 +447,13 @@ int shmctl(int shmid, int cmd, void *buf){
 			// 9 bits user mode
 	                // write to kernel data strcuture
         	        // shm[shmid].shmid_ds = *buf;
-                	shm[shmid].shmid_ds.shm_perm.mode = shmid_ds_buffer->shm_perm.perm_mode;
-                	shm[shmid].shmid_ds.shm_segsz = shmid_ds_buffer->shm_segsz;
-                	shm[shmid].shmid_ds.shm_cpid = shmid_ds_buffer->shm_cpid;
-               		shm[shmid].shmid_ds.shm_lpid = shmid_ds_buffer->shm_lpid;
-                	shm[shmid].shmid_ds.shm_nattch = shmid_ds_buffer->shm_nattch;
-                	shm[shmid].shmid_ds.shm_perm.perm_key = shmid_ds_buffer->shm_perm.perm_key;
-                	shm[shmid].shmid_ds.shm_perm.mode = shmid_ds_buffer->shm_perm.perm_mode;
+                	shm[shmid].shmid_ds.shm_perm.mode = shm_ds->shm_perm.mode;
+                	shm[shmid].shmid_ds.shm_segsz = shm_ds->shm_segsz;
+                	shm[shmid].shmid_ds.shm_cpid = shm_ds->shm_cpid;
+               		shm[shmid].shmid_ds.shm_lpid = shm_ds->shm_lpid;
+                	shm[shmid].shmid_ds.shm_nattch = shm_ds->shm_nattch;
+                	shm[shmid].shmid_ds.shm_perm.perm_key = shm_ds->shm_perm.perm_key;
+                	shm[shmid].shmid_ds.shm_perm.mode = shm_ds->shm_perm.mode;
 			return 0;
 		}
 		// EPERM 
@@ -468,7 +465,7 @@ int shmctl(int shmid, int cmd, void *buf){
 		if(perm == 0666){
 			// destroy if no process is attched to it
 			int page_count = (size / PGSIZE) + 1;
-			if(shm[shmid].shmid_ds,shm_nattch == 0){
+			if(shm[shmid].shmid_ds.shm_nattch == 0){
 				for(int i = 0; i < 100; i++){
 					if(shm[shmid].addr[i]){
 						char *addr = (char *)P2V(shm[shmid].addr[i]);
@@ -476,11 +473,11 @@ int shmctl(int shmid, int cmd, void *buf){
 					}
 				}
 				for(int i = 0; i < 100; i++){
-					shm[shmid].addr[j] = (void *)0;
+					shm[shmid].addr[i] = (void *)0;
 					shm[shmid].key = -1;
 					shm[shmid].mark_delete = 0;
-					shm[shmid].shmid_ds.ipc_perm.key = -1;
-					shm[shmid].shmid_ds.ipc_perm.mode = -1;
+					shm[shmid].shmid_ds.shm_perm.perm_key = -1;
+					shm[shmid].shmid_ds.shm_perm.mode = -1;
 					shm[shmid].shmid_ds.shm_segsz = 0;
       					shm[shmid].shmid_ds.shm_cpid = -1;
       					shm[shmid].shmid_ds.shm_lpid = -1;
@@ -499,11 +496,11 @@ int shmctl(int shmid, int cmd, void *buf){
 			return -1;
 	}
 	if(cmd == IPC_INFO){
-		shmid_ds_buffer->shminfo.shmall = shm[shmid].shmid_ds.shminfo.shmall;
-		shmid_ds_buffer->shminfo.shmmax = shm[shmid].shmid_ds.shminfo.shmmax;
-		shmid_ds_buffer->shminfo.shmmin = shm[shmid].shmid_ds.shminfo.shmmin;
-		shmid_ds_buffer->shminfo.shmmni = shm[shmid].shmid_ds.shminfo.shmmni;
-		shmid_ds_buffer->shminfo.shmseg = shm[shmid].shmid_ds.shminfo.shmseg;
+		shm_ds->shminfo.shmall = shm[shmid].shmid_ds.shminfo.shmall;
+		shm_ds->shminfo.shmmax = shm[shmid].shmid_ds.shminfo.shmmax;
+		shm_ds->shminfo.shmmin = shm[shmid].shmid_ds.shminfo.shmmin;
+		shm_ds->shminfo.shmmni = shm[shmid].shmid_ds.shminfo.shmmni;
+		shm_ds->shminfo.shmseg = shm[shmid].shmid_ds.shminfo.shmseg;
 		return 0;
 	}
 }
