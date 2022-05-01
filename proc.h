@@ -1,12 +1,19 @@
-//#define SHMALL 
-//#define SHMMAX
+#define SHMALL 16384 
+#define SHMMAX 8192
 #define SHMMIN 1
 #define SHMMNI 1024
-//#define SHMSEG 
-
-/*
-macros for key and flags will go here
-*/
+#define SHMSEG 16
+#define IPC_CREAT 10000000000
+#define IPC_PRIVATE 1
+#define IPC_EXCL 20000000000
+#define IPC_STAT 30000000000
+#define IPC_SET 40000000000
+#define IPC_INFO 50000000000
+#define IPC_RMID 60000000000
+#define SHM_REMAP 70000000000
+#define SHM_RDONLY 80000000000
+#define SHM_RND 90000000000
+#define SHMLBA PGSIZE
 
 // Per-CPU state
 struct cpu {
@@ -70,6 +77,7 @@ struct shminfo{
 struct shm{
   int key;
   int shmid;
+  int size;
   int mark_delete;
   char *addr[100];
   struct shmid_ds shmid_ds;

@@ -185,6 +185,7 @@ void shminit(){
   for(int i = 0; i < SHMMNI; i++){
     shm[i].key = -1;
     shm[i].shmid = i;
+    shm[i].size = 0;
     shm[i].mark_delete = 0;
     shm[i].shmid_ds.shm_segsz = 0;
     shm[i].shmid_ds.shm_cpid = -1;
@@ -213,7 +214,11 @@ int shmget(int key, int size, int shmflg){
   	// ENOPSC
   	if(count_req_pages > SHMALL)
   		return -1;
-
+	int permbits = shmflg & 10;
+	if(permbits == RD_SHM){
+		perm = RD_SHM;
+		shmflg ^= RD_SHM;
+	}
   	for(int i = 0; i < SHMMNI; i++){
   		// EEXIST -> shared mem exists and shmflg IPC_CREAT and IPC_EXCL
   		if(shm[i].key == key){
@@ -251,26 +256,27 @@ int shmget(int key, int size, int shmflg){
 	// ENOSPC -> all  possible shared memory IDs have been taken
   	if(find_flag == 0)
   		return -1;
-  	
+  	char *shmpage;
   	// create new segment
   	if((key == IPC_PRIVATE) || (shmflg == IPC_CREAT) || (shmflg == (IPC_CREAT | IPC_EXCL))){
   		for(int i = 0; i < count_req_pages; i++){
-  			char *shm_page = kalloc();
+  			shm_page = kalloc();
   			if(!shm_page){
   				cprintf("Shared memory page allocation failed\n");
   				return -1;
   			}
-        memset(shm_page, 0, PGSIZE);
-        shm[find_flag].addr[i] = (void *)V2P(shm_page);
+        		memset(shm_page, 0, PGSIZE);
+        		shm[find_flag].addr[i] = (void *)V2P(shm_page);
   		} 
   		shm[find_flag].key = key;
   		shm[find_flag].shmid = find_flag;
+		shm[find_flag].shmid_ds.shm_segsz = size;
   		shm[find_flag].shmid_ds.shm_segsz = count_req_pages;
   		shm[find_flag].shmid_ds.shm_cpid = myproc()->pid;
-		  shm[find_flag].shmid_ds.shm_lpid = 0;
-		  shm[find_flag].shmid_ds.shm_nattch = 0;
-		  /*shm[find_flag].shmid_ds.ipc_perm.mode = last significant 9 bits*/;
-		  shm[find_flag].shmid_ds.shm_perm.perm_key = key;
+		shm[find_flag].shmid_ds.shm_lpid = 0;
+		shm[find_flag].shmid_ds.shm_nattch = 0;
+		shm[find_flag].shmid_ds.shm_perm.mode = perm;
+		shm[find_flag].shmid_ds.shm_perm.perm_key = key;
 	}
 	return shm[find_flag].shmid;
 }
@@ -279,140 +285,171 @@ int shmget(int key, int size, int shmflg){
 void *shmat(int shmid, void *shmaddr, int shmflg){
 	// EINVAL -> an argument value is not valid, out of range, or NULL.
 	if (shmid > SHMMNI || shmid < 0)
-    return (void *)-1;
-  int index = -1, idx, perm_flag;
-  uint size = 0, seg;
-  void *va = (void*)HEAPLIMIT, *min_va;
-  struct proc *process = myproc();
-  index = shm[shmid].shmid;
-  // shmid not found
-  if(index == -1){
-    return (void*)-1;
-  }
-	// EINVAL -> the shmid parameter is not a valid shared memory identifier.
-  if (shm[shmid].key == -1)
-    return (void *)-1;
-	// EINVAL
-	if(shmflg == SHM_REMAP && shmaddr == NULL)
-		return (void *)-1;
-  	int perm = shm[shmid].shmid_ds.shm_perm.mode;
-  	// The process must have read permission for the segment. If this flag is not specified, the segment is attached for read and write access, and the process must have read and write permission for the segment.
-  	if (shmflg == SHM_RDONLY)
-    		perm = 444;
-	else
-		perm = 666;
-  	// EACCES -> the shared memory segment is to be attached in read-only mode and the calling thread does not read permission to the shared memory segment.
-  	if (shm[shmid].shmid_ds.shm_perm.mode != 444 && shmflg != SHM_RDONLY)
     		return (void *)-1;
-	if(shmaddr == NULL){
-		// choose page-aligned address to attch segment
-	}
-	else if(shmaddr != NULL && shmflg == SHM_RND){
-		// attch at address equal to shmaddr rounded down to the nearest multiple of SHMLBA
-	}
-	else{
-		// page-aligned address at which attch occurs
-	}
-
-  idx = -1;
-  for(int i = 0, i < SHMALL, i++){
-    if(process->shm_page[i].key != -1){
-      idx = i;
-      break;
-    }
-  }
-  if(index != -1){
-    process->shm_page[idx].shmid = shmid;
-    process->shm_page[idx].virtual_addr = va;
-    process->shm_page[idx].key = shm[index].key;
-    process->shm_page[idx].size = shm[index].size;
-    process->shm_page[idx].perm = perm_flag; 
-    shm[index].shmid_ds.shm_nattch =+ 1;
-    shm[index].shmid_ds.shm_lpid = process->pid;
-  }else{
-    return -1;
-  }
-  return va;
+  	// EINVAL 
+	if(shmflg == SHM_REMAP && shmaddr == NULL)
+		return -1;
+	// EACCES
+	if(shmflg == SHM_RDONLY && shm[shmid].shmid_ds.shm_perm.mode != 0444 && shm[shmid].shmid_ds.shm_perm.mode != 0666){
+  		return (void *)-1;
+	uint u_shmaddr = (uint)shmaddr;
+  	int index, permflg;
+  	uint size = 0;
+  	void *vir_addr = (void *)HEAPLIMIT;
+  	void *lowest_vir_addr;
+  	struct proc *curproc = myproc();
+  	int shm_id = shm[shmid].shmid;
+  	int perm;
+	  
+	if(shmaddr){
+  		if(u_shmaddr >= KERNABSE && u_shmaddr < HEAPLIMIT)
+  			retturn (void *)-1;
+  		uint round = ((uint)shmaddr & ~(SHMLBA));	
+  		
+  		if(shmflg == SHM_RND){
+  			if(!round) 
+  				return (void *)-1;
+  		vir_addr = (void*)round;
+  		}
+  		else{
+  			if(round == (u_shmaddr)
+				vir_addr = shmaddr;
+  		}
+  	}
+  	else{
+  		for(int i = 0; i < SHMMNI; i++){
+  			index = lowest_avail_vir_addr(vir_addr, curproc);
+  			if(!index){
+  				lowest_vir_addr = curproc->shm_page[index].va;
+  				uint shm_size = shm[shm_id].size*PGSIZE;
+  				if((uint)vir_addr + shm_size <= (uint)lowest_vir_addr;
+  					break;
+  				else
+  					vir_addr = (void *)((uint)lowest_vir_addr + curproc->shm_page[index]*PGSIZE;
+  			}
+  			else
+  				break;
+  		}
+  	}
+  	// exceeds KERNBASE limit
+  	//uint shm_size = shm[shm_id].size*PGSIZE;
+  	if((uint)vir_addr + shm[index].size*PGSIZE >= KERNBASE)
+  		return (void *)-1;
+  
+  	index = -1;
+  	for(int i = 0; i < SHMMNI; i++){
+  		if(curproc->shm_page[i].key != -1 && (uint)curproc->shm_page[i].va + curproc->shm_page[i].size*PGSIZE > (uint)vir_addr && (uint)vir_addr >= (uint)curproc->shm_page[i].va){
+      			idx = i;
+      			break;
+    		}
+  	}
+  
+  	if(index == -1){
+  		// replace any existing mapping in the range starting at shmaddr and continuing for the size of the segment
+  		if(shmflg == SHM_REMAP){
+  			uint seg = (uint)curproc->shm_page[index].va;
+  			while(seg < (uint)vir_addr + shm[shm_id].size*PGSIZE){
+  				size = curproc->shm_page[index].size;
+  				if(shmdt(void *)seg == -1)
+  					return (void *)-1;
+  				index = least_avail_vir_addr((void*)(seg + size*PGSIZE), curproc);
+  				if(index == -1)
+  					break;
+  				seg = (uint)curproc->shm_page[index].va;
+  			} 	
+  		}
+  		else
+  			return (void *)-1;	
+  	}
+  
+  	for(int i = 0; i < shm[shm_id].size; i++){
+  		if(mappages(curproc->pgdir, (void *)((uint)vir_addr + (i*PGSIZE)), PGSIZE, (uint)shm[shm_id].addr[i], perm) < 0){
+  			deallocuvm(curproc->pgdir, (uint)vir_addr, (uint)(vir_addr + shm[shm_id].size));
+  			return (void *)-1;
+  		}   
+  	}
+  	index = -1;
+  	for(int i = 0; i < SHMMNI; i++){
+  		if(curproc->shm_page[i].key == -1){
+ 			index = i;
+  			break;
+  		}	
+  	}
+  	if(index != -1){
+ 		curproc->shm_page[index].shmid = shmid;
+  		curproc->shm_page[index].va = vir_addr;
+  		curproc->shm_page[index].key = shm[shm_id].key;
+    		curproc->shm_page[index].size = shm[shm_id].size;
+   		curproc->shm_page[index].perm = perm;
+  		shm[shm_id].shmid_ds.shm_nattch += 1;
+  		shm[shm_id].shmid_ds.shm_lpid = curproc->pid;
+ 	} 
+  	else 
+   		return (void*)-1;  // page region exhausted
+	return vir_addr;
 }
 
 int shmdt(void *shmaddr){
-  char *shmaddr;
-  if (argptr(0, &shmaddr, sizeof(*shmaddr)) < 0)
-    return -1;
-  struct proc *process = myproc();
-  void *va = (void *)0;
-  int shmid, index, i, flag1 = -1;
-  uint size;
-  int flag1 = -1;
-  for(i = 0; i < SHMMNI; i++){
-    if (process->shm[i].va != shmaddr)
-      continue;
-    if (process->shm[i].va == shmaddr){
-      flag1 = i;
-      break;
-    }
-  }
-  // EINVAL -> limit for number of shared memory segments for that process reached
-  if (flag1 == -1)
-    return -1;
-  int shmid = process->shm_page[flag1].shmid;
-  // EINVAL -> The value of shmaddr is not the start address of a shared memory segment.
-  if (shm[shmid].key == -1)
-    return -1;
-  if (shm[shmid].shmid_ds.shm_perm. == 1 && shm[shmid].shmid_ds.shm_nattch == 0)
-  {
-    // if nattch becomes zero and segment is marked for deletion, it is deleted
-  }
-  // find the index from shm_page array which is attached at the provided shmaddr.
-  for(i = 0; i < SHMMNI; i++){
-    if(process->shm_page[i].key != -1 && process->shm_page[i].virtual_addr == shmaddr){
-      va = process->page[i].virtual_addr;
-      index = i;
-      shmid = process->shm_page[i].shmid;
-      size = process->shm_page[index].size;
-      break;
-    }
-  }
-  if(va){
-    process->shm_page[index].shmid = -1;
-    process->shm_page[index].key = -1;
-    process->shm_page[index].size = 0;
-    process->shm_page[index].virtual_addr = (void *)0;
-    // decrement attaches
-    if(shm[shmid].shmid_ds.shm_nattch > 0){
-      shm[shmid].shmid_ds.shm_nattch -= 1;
-    }
-    // remove the segments
-    if(shm[shmid].shmid_ds.shm_nattch == 0){
-      for(i = 0; i < shm[index].size; i++){
-        char *addr = (char *)P2V(shm[index].physical+addr[i]);
-        kfree(addr);
-        shm[index].addr[i] = (void *)0;
-      }
-      shm[shmid].size = 0;
-      shm[shmid].key = shm[shmid].shmid = -1;
-      shm[shmid].shmid_ds.shm_nattch = 0;
-      shm[shmid].shmid_ds.shm_segsz = -1;
-      shm[shmid].shmid_ds.shm_perm.perm_key = -1;
-      shm[shmid].shmid_ds.shm_perm.mode = -1;
-      shm[shmid].mark_delete = 0;
-      shm[shmid].shmid_ds.shm_cpid = -1;
-      shm[shmid].shmid_ds.shm_lpid = -1;
-    }
-    shm[shmid].shmid_ds.shm_lpid = process->pid;
-  }
-  return 0;
+	struct proc *curproc = myproc();
+	void *vir_addr = (void*)0;
+  	int index == -1;
+	for(int i = 0; i < SHMMNI; i++){
+		if(curproc->shm_page[i].va == shmaddr){
+			index = i;
+			break;
+		}
+	}
+	if(index == -1)
+		return -1;
+	int shmid = curproc->shm_page[index].shmid;
+	vir_addr = curproc->shm_page[index].va;
+	uint size = curproc->shm_page[index].size;
+	if(vir_addr){
+		for(int i = 0; i < size; i++){
+			pte_t *pte = walkpgdir(curproc->pgdir, (void *)((uint)vir_addr + i*PGSIZE), 0);
+			if(pte == 0)
+				return -1;
+			*pte = 0;
+		}
+		curproc->shm_page[shmid].shmid = -1;
+		curproc->shm_page[shmid].key = -1;
+		curproc->shm_page[shmid].size = 0;
+		curproc->shm_page[shmid].va = (void *)0;
+		if(shm[shmid].shmid_ds.shm_nattch > 0)
+			(shm[shmid].shmid_ds.shm_nattch)--;
+		// if no. of attach segment 0 and mark for delete
+		if(shm[shmid].shmid_ds.shm_nattch == 0 && shm[shmid].mark_delete == 1){
+			for(int i = 0; i < shm[shmid].size; i++){
+				char *addr = (char *)P2V(shm[index].addr[i];
+				kfree(addr);
+				shm[shmid]addr[i] = (void *)0;
+			}
+			shm[shmid].key = -1;
+			shm[shmid].shmid = -1;
+			shm[shmid].size = 0;
+			shm[shmid].mark_delete = 0;
+			shm[shmid].shmid_ds.shm_segsz = 0;
+			shm[shmid].shmid_ds.shm_perm.perm_key = -1;
+			shm[shmid].shmid_ds.shm_perm.mode = 0;
+			shm[shmid].shmid_ds.shm_cpid = -1;
+			shm[shmid].shmid_ds.shm_lpid = -1;
+			shm[shmid].shmid_ds.shm_nattch = 0;
+		}
+		shm[shmid].shmid_ds.shm_lpid = curproc->pid;
+		return 0;
+	}
+	else
+		return -1;
 }
 
 int shmctl(int shmid, int cmd, void *buf){
-  int i;
 	struct shmid_ds *shm_ds = (struct shmid_ds *)buf;
 	// EINVAL -> shmid not a valid identifier
 	if(shmid < 0 || shmid > SHMMNI || shm[shmid].key == -1)
 		return -1;
 
 	// EINVAL -> cmd is not valid command
-	if((cmd == IPC_STAT || cmd == IPC_SET || cmd == IPC_INFO || cmd == IPC_RMID))
+	if(!(cmd == IPC_STAT || cmd == IPC_SET || cmd == IPC_INFO || cmd == IPC_RMID))
 		return -1;
 	int perm = shm[i].shmid_ds.shm_perm.mode;
 	if(cmd == IPC_STAT){
@@ -443,11 +480,9 @@ int shmctl(int shmid, int cmd, void *buf){
 			return -1;
 
 		// permission
-		else if(perm == 666){
-			// 9 bits user mode
+		else if(perm == 0666){
 	                // write to kernel data strcuture
-        	        // shm[shmid].shmid_ds = *buf;
-                	shm[shmid].shmid_ds.shm_perm.mode = shm_ds->shm_perm.mode;
+        	        shm[shmid].shmid_ds.shm_perm.mode = shm_ds->shm_perm.mode;
                 	shm[shmid].shmid_ds.shm_segsz = shm_ds->shm_segsz;
                 	shm[shmid].shmid_ds.shm_cpid = shm_ds->shm_cpid;
                		shm[shmid].shmid_ds.shm_lpid = shm_ds->shm_lpid;
@@ -474,15 +509,15 @@ int shmctl(int shmid, int cmd, void *buf){
 				}
 				for(int i = 0; i < 100; i++){
 					shm[shmid].addr[i] = (void *)0;
-					shm[shmid].key = -1;
-					shm[shmid].mark_delete = 0;
-					shm[shmid].shmid_ds.shm_perm.perm_key = -1;
-					shm[shmid].shmid_ds.shm_perm.mode = -1;
-					shm[shmid].shmid_ds.shm_segsz = 0;
-      					shm[shmid].shmid_ds.shm_cpid = -1;
-      					shm[shmid].shmid_ds.shm_lpid = -1;
-      					shm[shmid].shmid_ds.shm_nattch = 0;
 				}
+				shm[shmid].key = -1;
+				shm[shmid].mark_delete = 0;
+				shm[shmid].shmid_ds.shm_perm.perm_key = -1;
+				shm[shmid].shmid_ds.shm_perm.mode = -1;
+				shm[shmid].shmid_ds.shm_segsz = 0;
+      				shm[shmid].shmid_ds.shm_cpid = -1;
+      				shm[shmid].shmid_ds.shm_lpid = -1;
+      				shm[shmid].shmid_ds.shm_nattch = 0;
 				return 0; 
 			}
 			else{
@@ -495,6 +530,7 @@ int shmctl(int shmid, int cmd, void *buf){
 		else
 			return -1;
 	}
+	/*
 	if(cmd == IPC_INFO){
 		shm_ds->shminfo.shmall = shm[shmid].shmid_ds.shminfo.shmall;
 		shm_ds->shminfo.shmmax = shm[shmid].shmid_ds.shminfo.shmmax;
@@ -502,7 +538,7 @@ int shmctl(int shmid, int cmd, void *buf){
 		shm_ds->shminfo.shmmni = shm[shmid].shmid_ds.shminfo.shmmni;
 		shm_ds->shminfo.shmseg = shm[shmid].shmid_ds.shminfo.shmseg;
 		return 0;
-	}
+	}*/
 }
 
 // Create a new process copying p as the parent.

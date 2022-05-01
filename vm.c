@@ -385,6 +385,19 @@ copyout(pde_t *pgdir, uint va, void *p, uint len)
   return 0;
 }
 
+// search lowest available address attched to virtual addr space
+int lowest_avail_vir_addr(void vir_addr, struct proc *curproc){
+	void *lowest_vir_addr = (void *)(KERNBASE -1);
+	int index = -1;
+	for(int i = 0; i < SHMMNI; i++){
+		if(curproc->shm_page[i].key != -1 && (uint)curproc->shm_page[i].va >= (uint)vir_addr && (uint)lowest_vir_addr >= (uint)curproc->shm_page[i].va){
+			lowest = curproc->shm_page[i].va;
+			index = i;
+		}
+	}
+	return index;
+}
+
 //PAGEBREAK!
 // Blank page.
 //PAGEBREAK!
